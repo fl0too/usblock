@@ -44,10 +44,17 @@ environment and install dependencies; after that they're instant.
 
 ```bat
 REM Windows (cmd or PowerShell, or just double-click usblock.bat)
-usblock.bat                        :: terminal viewer
+usblock.bat                        :: opens a menu (Open / Protect / List / Quit)
 usblock.bat list
 usblock.bat protect --drive E:\ --passphrase "secret" --add a.pdf b.mp4
 ```
+
+**Double-clicking `usblock.bat`** opens a small menu so you can protect or open
+content without typing anything, and the window stays open so you can read any
+messages. If it ever "flashes and closes", it means Python isn't installed —
+the window now pauses on that error and tells you to install it from
+[python.org](https://www.python.org/downloads/) with "Add python.exe to PATH"
+ticked.
 
 Python still does the cryptography and USB-serial work under the hood — it just
 runs behind the launcher, so you interact only with the terminal. The terminal

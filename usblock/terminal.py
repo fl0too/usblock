@@ -24,18 +24,48 @@ from . import crypto, detect_recording
 # --------------------------------------------------------------------------
 # small terminal helpers
 # --------------------------------------------------------------------------
+def _enable_ansi() -> bool:
+    """Return True if ANSI escapes will render. On Windows, try to turn on the
+    console's virtual-terminal processing so escapes aren't printed literally."""
+    if not sys.stdout.isatty():
+        return False
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+            mode = ctypes.c_uint32()
+            if not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+                return False
+            ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+            return bool(
+                kernel32.SetConsoleMode(
+                    handle, mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING
+                )
+            )
+        except Exception:  # noqa: BLE001
+            return False
+    return True
+
+
+_ANSI = _enable_ansi()
+
+
 def _clear() -> None:
-    # ANSI clear works on modern Windows terminals, macOS and Linux.
-    sys.stdout.write("\033[2J\033[H")
-    sys.stdout.flush()
+    if _ANSI:
+        sys.stdout.write("\033[2J\033[H")
+        sys.stdout.flush()
+    else:
+        os.system("cls" if os.name == "nt" else "clear")
 
 
 def _bold(s: str) -> str:
-    return f"\033[1m{s}\033[0m"
+    return f"\033[1m{s}\033[0m" if _ANSI else s
 
 
 def _red(s: str) -> str:
-    return f"\033[1;31m{s}\033[0m"
+    return f"\033[1;31m{s}\033[0m" if _ANSI else s
 
 
 def _open_with_default_app(path: str) -> None:

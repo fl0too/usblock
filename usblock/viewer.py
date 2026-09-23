@@ -44,7 +44,11 @@ class Vault:
         if not os.path.isfile(manifest_path):
             raise FileNotFoundError(
                 f"No protected content found on {self.info.mountpoint} "
-                f"(missing {PROTECTED_DIRNAME}/{MANIFEST_NAME})."
+                f"(missing {PROTECTED_DIRNAME}/{MANIFEST_NAME}).\n"
+                "  - If you haven't locked any files yet, do that first: pick "
+                "menu option 2, or run  usblock protect --drive <DRIVE> --add <files>.\n"
+                "  - If you already protected a USB, run this FROM that USB, or "
+                "pass  --drive <DRIVE>  to point at it."
             )
         with open(manifest_path, "r", encoding="utf-8") as fh:
             self.manifest = json.load(fh)
