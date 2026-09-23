@@ -24,7 +24,15 @@ class DriveInfo:
     device: str              # e.g. "\\\\.\\PHYSICALDRIVE2" or "/dev/sdb1"
     serial: Optional[str]    # hardware serial if we could read it
     label: str = ""
-    removable: bool = True
+    removable: Optional[bool] = None   # True = USB/removable, False = internal, None = unknown
+
+    @property
+    def kind(self) -> str:
+        if self.removable is True:
+            return "USB / removable"
+        if self.removable is False:
+            return "internal disk"
+        return "unknown type"
 
     @property
     def key_id(self) -> str:
@@ -69,21 +77,50 @@ def _linux_serial_for_device(device: str) -> Optional[str]:
     return None
 
 
+def _linux_is_removable(device: str) -> Optional[bool]:
+    name = os.path.basename(os.path.realpath(device))
+    sys_dir = os.path.join("/sys/class/block", name)
+    if not os.path.exists(sys_dir):
+        return None
+    real = os.path.realpath(sys_dir)
+    if os.path.exists(os.path.join(real, "partition")):
+        real = os.path.dirname(real)  # partition -> its parent disk
+    if "/usb" in real:
+        return True
+    try:
+        with open(os.path.join(real, "removable"), encoding="ascii") as fh:
+            return fh.read().strip() == "1"
+    except OSError:
+        return None
+
+
 # --------------------------------------------------------------------------
 # Windows
 # --------------------------------------------------------------------------
-def _windows_serial_for_drive_letter(letter: str) -> Optional[str]:
+# MSFT_Disk BusType values that mean "plugged-in stick/card" (names and codes).
+_WIN_REMOVABLE_BUSES = {"USB", "SD", "MMC", "7", "12", "13"}
+_WIN_UNKNOWN_BUSES = {"", "UNKNOWN", "0"}
+
+
+def _windows_disk_props(letter: str) -> tuple[Optional[str], Optional[str]]:
+    """(serial, bus type) for a drive letter via the Storage cmdlets, in one call."""
     letter = letter.rstrip(":\\/")
-    # Preferred: modern Storage cmdlets join drive letter -> disk -> serial.
     ps = (
-        f"$ErrorActionPreference='SilentlyContinue';"
-        f"(Get-Partition -DriveLetter {letter} | Get-Disk)."
-        f"SerialNumber"
+        "$ErrorActionPreference='SilentlyContinue';"
+        f"$d=Get-Partition -DriveLetter {letter} | Get-Disk;"
+        "if($d){ [string]$d.SerialNumber + '|' + [string]$d.BusType }"
     )
     out = _run(["powershell", "-NoProfile", "-Command", ps]).strip()
-    if out:
-        return out
-    # Older systems: WMI association chain.
+    line = out.splitlines()[0] if out else ""
+    if "|" not in line:
+        return None, None
+    serial, bus = line.split("|", 1)
+    return (serial.strip() or None), (bus.strip() or None)
+
+
+def _windows_serial_wmi(letter: str) -> Optional[str]:
+    """Older systems without the Storage cmdlets: WMI association chain."""
+    letter = letter.rstrip(":\\/")
     ps2 = (
         f"$ErrorActionPreference='SilentlyContinue';"
         f"$d=Get-WmiObject Win32_DiskDrive;"
@@ -126,6 +163,20 @@ def _macos_serial_for_mount(mountpoint: str) -> Optional[str]:
     return None
 
 
+def _macos_is_removable(mountpoint: str) -> Optional[bool]:
+    out = _run(["diskutil", "info", mountpoint])
+    if not out:
+        return None
+    if (re.search(r"Protocol:\s*USB", out)
+            or re.search(r"Removable Media:\s*Removable", out)
+            or re.search(r"Device Location:\s*External", out)):
+        return True
+    if (re.search(r"Device Location:\s*Internal", out)
+            or re.search(r"Removable Media:\s*Fixed", out)):
+        return False
+    return None
+
+
 # --------------------------------------------------------------------------
 # Public API
 # --------------------------------------------------------------------------
@@ -160,30 +211,40 @@ def get_drive_info(path: str) -> DriveInfo:
 
     mp = part.mountpoint
     device = part.device
-    removable = "removable" in (part.opts or "") or True  # best-effort
     serial: Optional[str] = None
+    removable: Optional[bool] = None
 
     if sys.platform.startswith("win"):
-        letter = mp
-        serial = _windows_serial_for_drive_letter(letter)
+        serial, bus = _windows_disk_props(mp)
         if not serial:
-            serial = _windows_volume_serial(letter)
+            serial = _windows_serial_wmi(mp)
+        if not serial:
+            serial = _windows_volume_serial(mp)
+        # psutil reports the Windows drive type in opts ("fixed", "removable").
+        opts = (part.opts or "").lower()
+        bus_u = (bus or "").upper()
+        if "removable" in opts or bus_u in _WIN_REMOVABLE_BUSES:
+            removable = True
+        elif bus_u not in _WIN_UNKNOWN_BUSES or "fixed" in opts:
+            removable = False
     elif sys.platform == "darwin":
         serial = _macos_serial_for_mount(mp)
+        removable = _macos_is_removable(mp)
     else:  # linux and friends
         serial = _linux_serial_for_device(device)
+        removable = _linux_is_removable(device)
 
     return DriveInfo(
         mountpoint=mp,
         device=device,
         serial=serial,
         label=os.path.basename(mp.rstrip("/\\")) or mp,
-        removable=bool(removable),
+        removable=removable,
     )
 
 
-def list_removable_drives() -> list[DriveInfo]:
-    """Enumerate mounted drives with their serials (for the --list command)."""
+def list_drives() -> list[DriveInfo]:
+    """Enumerate mounted drives with their serials and USB/internal type."""
     import psutil
 
     infos: list[DriveInfo] = []
@@ -202,7 +263,7 @@ def list_removable_drives() -> list[DriveInfo]:
 
 if __name__ == "__main__":
     print("Mounted drives and their hardware serials:\n")
-    for d in list_removable_drives():
+    for d in list_drives():
         tag = d.serial or "(serial unavailable — will use device path, weaker)"
-        print(f"  {d.mountpoint:<28} device={d.device:<20} serial={tag}")
+        print(f"  {d.mountpoint:<28} {d.kind:<16} device={d.device:<20} serial={tag}")
     print("\nUse the serial above as the key when protecting content.")

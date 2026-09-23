@@ -32,7 +32,7 @@ from base64 import b64encode
 
 from . import MANIFEST_NAME, PROTECTED_DIRNAME, __version__
 from . import crypto
-from .usbid import get_drive_info, list_removable_drives
+from .usbid import get_drive_info, list_drives
 
 
 def _classify(path: str) -> str:
@@ -53,19 +53,25 @@ def _classify(path: str) -> str:
 
 
 def cmd_list() -> int:
-    drives = list_removable_drives()
+    drives = list_drives()
     if not drives:
         print("No mounted drives found.")
         return 1
-    print("Mounted drives:\n")
+    print("Mounted drives (lock your content to the one marked USB / removable):\n")
     for d in drives:
         tag = d.serial or "(no hardware serial — device path will be used, weaker)"
-        print(f"  {d.mountpoint:<28} serial = {tag}")
+        print(f"  {d.mountpoint:<24} {d.kind:<16} serial = {tag}")
     return 0
 
 
 def cmd_protect(drive_path: str, passphrase: str, files: list[str]) -> int:
     info = get_drive_info(drive_path)
+    if info.removable is False:
+        print(
+            f"WARNING: {info.mountpoint} looks like an internal disk, not a USB "
+            "stick. The protected files will be written there and bound to it.\n",
+            file=sys.stderr,
+        )
     if not info.serial:
         print(
             "WARNING: could not read a hardware serial for this drive. Falling "

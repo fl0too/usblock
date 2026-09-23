@@ -89,7 +89,10 @@ PDFs simply won't preview.
 python protect.py --list
 ```
 
-You'll see each mounted drive and its hardware serial. If a drive shows
+You'll see each mounted drive, whether it's a **USB / removable** stick or an
+**internal disk**, and its hardware serial. Lock your content to the USB stick —
+never to `C:\` or another internal disk (the menu's option 2 suggests the USB
+automatically and warns you if you pick an internal disk). If a drive shows
 `(no hardware serial …)`, the OS couldn't read one and the tool will fall back
 to the device path — weaker and less portable, so prefer a stick that reports
 a real serial.

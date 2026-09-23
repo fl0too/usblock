@@ -9,7 +9,10 @@
 
 You normally invoke this through ./usblock.sh or usblock.bat, not directly.
 """
+from __future__ import annotations
+
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -17,21 +20,76 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 USAGE = __doc__
 
 
+def _choose_drive() -> str | None:
+    """Numbered drive picker that points the user at the USB stick.
+
+    Returns the chosen drive's mount point, or None if cancelled.
+    """
+    from usblock.usbid import get_drive_info, list_drives
+
+    drives = list_drives()
+    if not drives:
+        print("  No drives found. Plug in the USB stick and try again.")
+        return None
+
+    print("\nDrives on this computer:\n")
+    for i, d in enumerate(drives, 1):
+        serial = d.serial or "no hardware serial"
+        print(f"  {i}) {d.mountpoint:<22} {d.kind:<16} serial: {serial}")
+
+    usb = [d for d in drives if d.removable]
+    default = usb[0] if len(usb) == 1 else None
+    if all(d.removable is False for d in drives):
+        print("\n  No USB stick detected — plug it in, then choose option 2 again.")
+
+    prompt = "\nWhich USB stick should the content be locked to? Enter its number"
+    if default:
+        prompt += f" [press Enter for {default.mountpoint}]"
+    raw = input(prompt + ": ").strip().strip('"').strip("'")
+
+    if not raw:
+        if default:
+            return default.mountpoint
+        print("  Cancelled — no drive chosen.")
+        return None
+
+    chosen = None
+    if raw.isdigit() and 1 <= int(raw) <= len(drives):
+        chosen = drives[int(raw) - 1]
+    else:
+        # Also accept a typed drive letter ("E", "E:", "E:\") or a path.
+        target = raw
+        if os.name == "nt" and re.fullmatch(r"[A-Za-z]:?[\\/]?", raw):
+            target = raw[0].upper() + ":\\"
+        norm = os.path.normcase(os.path.abspath(target))
+        for d in drives:
+            if os.path.normcase(os.path.abspath(d.mountpoint)) == norm:
+                chosen = d
+                break
+        if chosen is None and os.path.isdir(target):
+            chosen = get_drive_info(target)
+        if chosen is None:
+            print(f"  '{raw}' isn't one of the drives listed above.")
+            return None
+
+    if chosen.removable is False:
+        print(f"\n  WARNING: {chosen.mountpoint} is an internal disk, not a USB stick.")
+        print("  The protected files would be written there instead of onto your USB.")
+        if input("  Use it anyway? (y/N): ").strip().lower() not in ("y", "yes"):
+            print("  Cancelled.")
+            return None
+    return chosen.mountpoint
+
+
 def _guided_protect() -> None:
     """Interactive 'protect files onto a USB' flow for double-click users."""
     import getpass
     import shlex
 
-    from usblock.protect import cmd_list, cmd_protect
+    from usblock.protect import cmd_protect
 
-    print("\nDetected drives (use one of these as the target):\n")
-    cmd_list()
-    drive = input(
-        "\nWhich drive should the content be locked to?\n"
-        "  (e.g. E:\\ on Windows, or /media/you/STICK): "
-    ).strip().strip('"').strip("'")
+    drive = _choose_drive()
     if not drive:
-        print("  Cancelled — no drive entered.")
         return
 
     pw = getpass.getpass(
