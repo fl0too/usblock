@@ -12,6 +12,9 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(ROOT, "usblock_dist.zip")
 
 INCLUDE_FILES = [
+    "usblock.sh",
+    "usblock.bat",
+    "usblock_cli.py",
     "run_viewer.py",
     "protect.py",
     "build_exe.py",

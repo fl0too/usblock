@@ -358,6 +358,50 @@ def run_gui(drive_path: str, passphrase_arg: str) -> int:
 
 
 # --------------------------------------------------------------------------
+def _unlock_with_prompt(drive_path: str, passphrase: str):
+    """Build a Vault, prompting for a passphrase in the terminal if needed.
+
+    Returns (vault, exit_code). If exit_code is not None the caller should
+    return it; otherwise vault is unlocked and ready.
+    """
+    import getpass
+
+    try:
+        vault = Vault(drive_path, passphrase)
+    except FileNotFoundError as exc:
+        print(exc, file=sys.stderr)
+        return None, 2
+
+    if not vault.unlocked and vault.requires_passphrase:
+        for _ in range(3):
+            try:
+                pw = getpass.getpass("Passphrase for this content: ")
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return None, 1
+            vault = Vault(drive_path, pw)
+            if vault.unlocked:
+                break
+
+    if not vault.unlocked:
+        print(
+            "Locked: this content is bound to a different USB drive, or the "
+            "passphrase is wrong. Plug in the correct USB stick and retry.",
+            file=sys.stderr,
+        )
+        return None, 3
+    return vault, None
+
+
+def run_terminal_mode(drive_path: str, passphrase: str) -> int:
+    from .terminal import run_terminal
+
+    vault, code = _unlock_with_prompt(drive_path, passphrase)
+    if vault is None:
+        return code
+    return run_terminal(vault)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="run_viewer.py",
@@ -365,7 +409,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--drive", help="USB mount point (default: where this app lives)")
     p.add_argument("--passphrase", default="", help="passphrase if the content needs one")
-    p.add_argument("--headless", action="store_true", help="no GUI; verify + list only")
+    p.add_argument("--terminal", action="store_true",
+                   help="run in the terminal (text menu, no GUI window)")
+    p.add_argument("--gui", action="store_true", help="force the graphical viewer")
+    p.add_argument("--headless", action="store_true", help="no UI; verify + list only")
     return p
 
 
@@ -381,13 +428,28 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         return run_headless(vault)
 
+    if args.terminal:
+        return run_terminal_mode(drive_path, args.passphrase)
+
+    # Default: try the GUI, but fall back to the terminal viewer if there is
+    # no display or tkinter is unavailable (unless --gui forces it).
+    try:
+        import tkinter  # noqa: F401
+        has_display = sys.platform.startswith("win") or sys.platform == "darwin" \
+            or bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+    except ImportError:
+        has_display = False
+
+    if not args.gui and not has_display:
+        print("No graphical display detected — using the terminal viewer.\n")
+        return run_terminal_mode(drive_path, args.passphrase)
+
     try:
         return run_gui(drive_path, args.passphrase)
     except Exception as exc:  # noqa: BLE001 - surface any GUI/import failure clearly
-        print(f"Viewer error: {exc}", file=sys.stderr)
-        print("Tip: run with --headless to verify content without a display.",
+        print(f"Graphical viewer unavailable ({exc}); falling back to terminal.\n",
               file=sys.stderr)
-        return 1
+        return run_terminal_mode(drive_path, args.passphrase)
 
 
 if __name__ == "__main__":

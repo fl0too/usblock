@@ -18,12 +18,45 @@ below before relying on it.
 
 | File | Purpose |
 |------|---------|
+| `usblock.sh` / `usblock.bat` | **Run this.** Terminal launchers — auto-set-up on first run, then dispatch every command. You never type `python`. |
+| `usblock_cli.py` | The command dispatcher the launchers call (`view` / `gui` / `list` / `protect` / `test`). |
 | `protect.py` | Encrypt your files and bind them to a chosen USB drive. |
 | `run_viewer.py` | The viewer recipients run to read the content ("the executable"). |
-| `build_exe.py` | Turn `run_viewer.py` into a standalone `.exe`/binary with PyInstaller. |
-| `usblock/` | The library: USB serial detection, crypto, recorder detection, viewer. |
-| `tests/` | End-to-end self-test (`python tests/test_roundtrip.py`). |
+| `build_exe.py` | Turn the viewer into a standalone `.exe`/binary with PyInstaller. |
+| `usblock/` | The library: USB serial detection, crypto, recorder detection, GUI + terminal viewer. |
+| `tests/` | End-to-end self-test (`./usblock.sh test`). |
 | `requirements.txt` | Python dependencies. |
+
+---
+
+## Run it from the terminal (no `python` typing)
+
+The launcher scripts do everything. On first run they quietly create a private
+environment and install dependencies; after that they're instant.
+
+```bash
+# macOS / Linux
+./usblock.sh                       # open the content in a text menu (terminal)
+./usblock.sh list                  # show drives + serials
+./usblock.sh protect --drive /media/you/STICK --passphrase "secret" --add a.pdf b.mp4
+./usblock.sh gui                   # graphical viewer instead of the terminal one
+```
+
+```bat
+REM Windows (cmd or PowerShell, or just double-click usblock.bat)
+usblock.bat                        :: terminal viewer
+usblock.bat list
+usblock.bat protect --drive E:\ --passphrase "secret" --add a.pdf b.mp4
+```
+
+Python still does the cryptography and USB-serial work under the hood — it just
+runs behind the launcher, so you interact only with the terminal. The terminal
+viewer shows a numbered menu; type a number to open an item. **While a screen
+recorder is running the menu is replaced by a warning and opening is refused**
+until you close the recorder — the terminal equivalent of blanking the screen.
+
+The rest of this README uses the underlying `python …` commands, which still
+work if you prefer them.
 
 ---
 
@@ -90,9 +123,13 @@ python build_exe.py          # -> dist/SecureViewer(.exe) — copy it onto the s
 ## 4. Open the content
 
 ```bash
-python run_viewer.py                 # auto-detects the USB it lives on
-python run_viewer.py --drive E:\     # or point it at the drive
-python run_viewer.py --headless      # verify + list without a GUI
+./usblock.sh                         # terminal viewer, auto-detects the USB
+./usblock.sh gui                     # graphical viewer
+# or, directly:
+python run_viewer.py --terminal      # text menu, no GUI window
+python run_viewer.py                 # GUI (falls back to terminal if no display)
+python run_viewer.py --drive E:\     # point it at a specific drive
+python run_viewer.py --headless      # verify + list only, no interaction
 ```
 
 The viewer reads the stick's serial, derives the key (prompting for the
