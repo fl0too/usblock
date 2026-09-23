@@ -1,0 +1,12 @@
+# Core (required)
+cryptography>=42.0      # AES-GCM encryption + key derivation
+psutil>=5.9             # drive enumeration + process detection
+
+# Viewer extras (recommended)
+PyMuPDF>=1.24           # render encrypted PDFs in-memory (no plaintext on disk)
+
+# Optional, for stronger in-memory video playback instead of temp-file playback
+# python-vlc>=3.0        # requires the VLC media player to be installed
+
+# Build (optional, to produce a standalone executable)
+# pyinstaller>=6.0
